@@ -1,11 +1,10 @@
 import fs from "fs";
-import pdf from "pdf-parse";
 
 export const extractText = async (filePath) => {
+  const pdfParse = (await import("pdf-parse")).default;
 
-  const dataBuffer = fs.readFileSync(filePath);
-
-  const data = await pdf(dataBuffer);
+  const buffer = fs.readFileSync(filePath);
+  const data = await pdfParse(buffer);
 
   return data.text;
 };
