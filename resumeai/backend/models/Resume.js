@@ -8,7 +8,19 @@ const resumeSchema = new mongoose.Schema(
     required: true
   },
 
-  fileName: String,
+  fileName: {
+    type: String,
+    required: true
+  },
+
+  originalName: {
+    type: String
+  },
+
+  path: {
+    type: String,
+    required: true
+  },
 
   parsedData: {
     skills: [String],
@@ -18,15 +30,13 @@ const resumeSchema = new mongoose.Schema(
   },
 
   score: {
-    value: Number,
     strengths: [String],
     weaknesses: [String]
   },
 
   skillMatch: {
     matchingSkills: [String],
-    missingSkills: [String],
-    compatibilityScore: Number
+    missingSkills: [String]
   },
 
   careerAdvice: {

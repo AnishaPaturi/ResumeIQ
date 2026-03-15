@@ -1,46 +1,21 @@
-import axios from "axios";
+export const matcherAgent = async (parsedSkills, jobRequirements = []) => {
 
-export const matcherAgent = async (resume,requirements)=>{
+  const matchingSkills = [];
+  const missingSkills = [];
 
-const prompt = `
-Compare this resume with the job requirements.
+  jobRequirements.forEach(skill => {
 
-Identify:
+    if (parsedSkills.some(s => s.toLowerCase().includes(skill.toLowerCase()))) {
+      matchingSkills.push(skill);
+    } else {
+      missingSkills.push(skill);
+    }
 
-- matching skills
-- missing skills
-- compatibility score out of 100
+  });
 
-Return JSON:
-
-{
-matching_skills: [],
-missing_skills: [],
-compatibility_score: number
-}
-
-Resume:
-${resume}
-
-Job Requirements:
-${requirements}
-`;
-
-const response = await axios.post(
-"https://openrouter.ai/api/v1/chat/completions",
-{
-model:"anthropic/claude-3-haiku",
-messages:[
-{role:"user",content:prompt}
-]
-},
-{
-headers:{
-"Authorization":`Bearer ${process.env.OPENROUTER_API_KEY}`
-}
-}
-);
-
-return response.data.choices[0].message.content;
+  return {
+    matchingSkills,
+    missingSkills
+  };
 
 };

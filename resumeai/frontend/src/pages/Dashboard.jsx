@@ -322,6 +322,7 @@ export default function Dashboard() {
 
     console.log("Upload response:", data);
 
+    // Save resumeId in state only
     setUploadedResumeId(data.resumeId);
 
     alert("Resume uploaded successfully");
@@ -338,6 +339,33 @@ export default function Dashboard() {
 };
 
 
+const analyzeResume = async () => {
+
+  if (!uploadedResumeId) {
+    alert("Please upload a resume first");
+    return;
+  }
+
+  try {
+
+    const response = await fetch(
+      `http://localhost:5000/api/analyze/${uploadedResumeId}`
+    );
+
+    const data = await response.json();
+
+    console.log("AI Analysis:", data);
+
+    alert("Analysis complete! Check console.");
+
+  } catch (error) {
+
+    console.error("Analysis failed:", error);
+    alert("Analysis failed");
+
+  }
+
+};
 
   useEffect(() => {
     const handler = (e) => {
@@ -348,6 +376,16 @@ export default function Dashboard() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+//   useEffect(() => {
+
+//   const savedResumeId = localStorage.getItem("resumeId");
+
+//   if (savedResumeId) {
+//     setUploadedResumeId(savedResumeId);
+//   }
+
+// }, []);
 
   const initials = user?.name
     ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -522,22 +560,26 @@ export default function Dashboard() {
                       {selectedFile.name}
                     </p>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        uploadResume();
-                      }}
-                      disabled={uploading}
-                      className="mt-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-2 rounded-xl"
-                    >
-                      {uploading ? "Uploading..." : "Upload Resume"}
-                    </button>
+                    {/* Upload Button */}
+                    {!uploadedResumeId && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          uploadResume();
+                        }}
+                        disabled={uploading}
+                        className="mt-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-2 rounded-xl"
+                      >
+                        {uploading ? "Uploading..." : "Upload Resume"}
+                      </button>
+                    )}
 
+                    {/* Analyze Button */}
                     {uploadedResumeId && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigate(`/analyze/${uploadedResumeId}`);
+                          analyzeResume();
                         }}
                         className="mt-3 bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl"
                       >
@@ -547,6 +589,7 @@ export default function Dashboard() {
 
                   </div>
                 )}
+
 
               </div>
             </div>

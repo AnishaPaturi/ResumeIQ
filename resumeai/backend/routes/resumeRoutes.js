@@ -30,8 +30,8 @@ router.post("/upload", upload.single("resume"), async (req, res) => {
 
     await resume.save();
 
-    return res.status(200).json({
-      message: "Resume uploaded",
+    res.json({
+      message: "Resume uploaded successfully",
       resumeId: resume._id
     });
 
@@ -39,8 +39,43 @@ router.post("/upload", upload.single("resume"), async (req, res) => {
 
     console.error("UPLOAD ERROR:", error);
 
-    return res.status(500).json({
-      message: "Upload failed",
+    res.status(500).json({
+      message: "Upload failed"
+    });
+
+  }
+
+});
+
+router.get("/:resumeId", async (req, res) => {
+
+  try {
+
+    const resume = await Resume.findById(req.params.resumeId);
+
+    if (!resume) {
+      return res.status(404).json({ message: "Resume not found" });
+    }
+
+    console.log("Resume found:", resume);
+
+    const buffer = fs.readFileSync(resume.path);
+
+    const data = await pdfParse(buffer);
+
+    console.log("Parsed text length:", data.text.length);
+
+    res.json({
+      message: "Resume parsed",
+      text: data.text
+    });
+
+  } catch (error) {
+
+    console.error("ANALYZE ERROR:", error);
+
+    res.status(500).json({
+      message: "Analysis failed",
       error: error.message
     });
 

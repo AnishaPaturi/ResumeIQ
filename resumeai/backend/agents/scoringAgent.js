@@ -1,42 +1,39 @@
-import axios from "axios";
+export const scoringAgent = async (parsedData) => {
 
-export const scoringAgent = async (resume) => {
+  let score = 0;
 
-const prompt = `
-Score this resume out of 100 based on
+  const strengths = [];
+  const weaknesses = [];
 
-- technical skills
-- projects
-- ATS friendliness
-- relevance for software engineering roles
+  if (parsedData.skills.length > 3) {
+    score += 30;
+    strengths.push("Good technical skill set");
+  } else {
+    weaknesses.push("Add more technical skills");
+  }
 
-Return JSON:
+  if (parsedData.projects.length > 1) {
+    score += 30;
+    strengths.push("Good number of projects");
+  } else {
+    weaknesses.push("Add more projects");
+  }
 
-{
-score: number,
-strengths: [],
-weaknesses: []
-}
+  if (parsedData.education.length > 0) {
+    score += 20;
+  }
 
-Resume:
-${resume}
-`;
+  if (parsedData.experience.length > 0) {
+    score += 20;
+    strengths.push("Has relevant experience");
+  } else {
+    weaknesses.push("Add internships or work experience");
+  }
 
-const response = await axios.post(
-"https://openrouter.ai/api/v1/chat/completions",
-{
-model:"anthropic/claude-3-haiku",
-messages:[
-{role:"user",content:prompt}
-]
-},
-{
-headers:{
-"Authorization":`Bearer ${process.env.OPENROUTER_API_KEY}`
-}
-}
-);
-
-return response.data.choices[0].message.content;
+  return {
+    score,
+    strengths,
+    weaknesses
+  };
 
 };

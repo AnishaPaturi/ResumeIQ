@@ -1,30 +1,39 @@
-import axios from "axios";
+export const parserAgent = async (resumeText) => {
 
-export const parserAgent = async (resume) => {
+  const skills = [];
+  const projects = [];
+  const education = [];
+  const experience = [];
 
-  const prompt = `
-Extract skills, projects, education and experience from this resume.
+  const lines = resumeText.split("\n");
 
-Return JSON.
+  lines.forEach(line => {
 
-Resume:
-${resume}
-`;
+    const l = line.toLowerCase();
 
-  const res = await axios.post(
-    "https://openrouter.ai/api/v1/chat/completions",
-    {
-      model:"anthropic/claude-3-haiku",
-      messages:[
-        {role:"user",content:prompt}
-      ]
-    },
-    {
-      headers:{
-        "Authorization":`Bearer ${process.env.OPENROUTER_API_KEY}`
-      }
+    if (l.includes("react") || l.includes("node") || l.includes("python")) {
+      skills.push(line.trim());
     }
-  );
 
-  return res.data.choices[0].message.content;
+    if (l.includes("project")) {
+      projects.push(line.trim());
+    }
+
+    if (l.includes("btech") || l.includes("bachelor") || l.includes("university")) {
+      education.push(line.trim());
+    }
+
+    if (l.includes("intern") || l.includes("developer")) {
+      experience.push(line.trim());
+    }
+
+  });
+
+  return {
+    skills,
+    projects,
+    education,
+    experience
+  };
+
 };
