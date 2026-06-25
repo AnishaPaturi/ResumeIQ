@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import JSZip from "jszip";
 import jsPDF from "jspdf";
 import * as pdfjsLib from "pdfjs-dist";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import knowledgeBase from "@/data/knowledge_base.json";
 import {
   Upload,
   FileText,
@@ -278,7 +280,27 @@ function buildTailoredPdfLines(parsed: ParsedResume, optimizedBullets: Record<st
   return lines;
 }
 
-async function queryGemini(apiKey: string, resumeText: string, jobDesc: string): Promise<{
+function retrieveRagData(jobDesc: string) {
+  const normalizedJD = jobDesc.toLowerCase();
+  let bestRole = knowledgeBase.roles[2]; // Default to Fullstack
+  let maxScore = 0;
+
+  for (const role of knowledgeBase.roles) {
+    let score = 0;
+    for (const kw of role.keywords) {
+      if (normalizedJD.includes(kw.toLowerCase())) {
+        score++;
+      }
+    }
+    if (score > maxScore) {
+      maxScore = score;
+      bestRole = role;
+    }
+  }
+  return bestRole;
+}
+
+async function queryLLM(apiKey: string, resumeText: string, jobDesc: string): Promise<{
   summary: string;
   optimizedBullets: Record<string, string>;
   atsScore: number;
@@ -286,7 +308,9 @@ async function queryGemini(apiKey: string, resumeText: string, jobDesc: string):
   addedKeywords: string[];
   improvements: string[];
 }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  // RAG Retrieval Phase
+  const ragRole = retrieveRagData(jobDesc);
+
   const prompt = `
 You are a professional ATS resume optimizer.
 Here is the candidate's raw resume text:
@@ -299,9 +323,15 @@ Here is the Target Job Description:
 ${jobDesc}
 """
 
-Please tailor the resume for the job description. Do NOT remove critical history or change dates, names, or degrees. Only:
+--- RAG CONTEXT: INDUSTRY STANDARDS & OPTIMIZATION TARGETS FOR THIS ROLE (${ragRole.title}) ---
+Key Industry-Standard Keywords to integrate: ${ragRole.keywords.join(", ")}
+Examples of high-impact metrics-driven bullet templates:
+${ragRole.bullet_templates.map(t => `- "${t}"`).join("\n")}
+---------------------------------------------------------------------------------------------
+
+Please tailor the resume for the job description and the RAG industry standards. Do NOT remove critical history or change dates, names, or degrees. Only:
 1. Tailor the professional summary.
-2. Rewrite bullet points under Experience and Projects to naturally weave in missing keywords and use strong action verbs.
+2. Rewrite bullet points under Experience and Projects to naturally weave in missing keywords and match the high-impact style of the retrieved RAG templates.
 3. Provide a list of missing keywords and added keywords.
 4. Calculate an ATS score (between 0 and 100) and list improvements.
 
@@ -319,29 +349,60 @@ Respond ONLY with a JSON object in this format (do NOT include markdown code blo
 }
 `;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{ text: prompt }]
-      }],
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
-    })
-  });
+  if (apiKey.trim().startsWith("sk-or-")) {
+    // OpenRouter API Call
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer": window.location.origin,
+        "X-Title": "ResumeIQ"
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API Error: ${response.status} - ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter API Error: ${response.status} - ${errorText}`);
+    }
+
+    const json = await response.json();
+    const text = json.choices[0].message.content;
+    return JSON.parse(text);
+  } else {
+    // Standard Gemini API Call
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API Error: ${response.status} - ${errorText}`);
+    }
+
+    const json = await response.json();
+    const text = json.candidates[0].content.parts[0].text;
+    return JSON.parse(text);
   }
-
-  const json = await response.json();
-  const text = json.candidates[0].content.parts[0].text;
-  return JSON.parse(text);
 }
 
 // ── Download DOCX: open uploaded file with JSZip, patch XML, re-download ────
@@ -437,10 +498,167 @@ async function downloadDocx(file: File, optimizedBullets: Record<string, string>
   triggerDownload(buf, tweakFilename(file.name, "tailored"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 }
 
+// ── PDF Template Preservation: Erase and rewrite tailored sections in-place ────
+async function patchPdfFile(
+  file: File,
+  optimizedBullets: Record<string, string> | null,
+  tailoredSummary: string | null
+): Promise<ArrayBuffer> {
+  const fileBytes = await file.arrayBuffer();
+  
+  // 1. Parse text coordinates using PDFJS
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(fileBytes) });
+  const pdf = await loadingTask.promise;
+  
+  const textCoordinates: {
+    pageNumber: number;
+    text: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    section: string;
+  }[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const items = textContent.items as any[];
+    
+    // Sort items top-to-bottom then left-to-right
+    items.sort((a, b) => {
+      const yA = a.transform[5];
+      const yB = b.transform[5];
+      if (Math.abs(yA - yB) > 5) {
+        return yB - yA;
+      }
+      return a.transform[4] - b.transform[4];
+    });
+
+    let currentSection = "header";
+
+    for (const item of items) {
+      if (!item.str.trim()) continue;
+      
+      const text = item.str.trim();
+      const upper = text.toUpperCase();
+
+      // Detect section transitions
+      if (/EXPERIENCE|WORK HISTORY|EMPLOYMENT/.test(upper) && text.length < 30) {
+        currentSection = "experience";
+      } else if (/PROJECTS|ACCOMPLISHMENTS/.test(upper) && text.length < 30) {
+        currentSection = "projects";
+      } else if (/SUMMARY|PROFESSIONAL SUMMARY|PROFILE|OBJECTIVE/.test(upper) && text.length < 30) {
+        currentSection = "summary";
+      } else if (/EDUCATION|SKILLS|CONTACT|LANGUAGES/.test(upper) && text.length < 30) {
+        currentSection = "other";
+      }
+
+      const x = item.transform[4];
+      const y = item.transform[5];
+      const w = item.width;
+      const h = item.height || item.transform[0];
+
+      textCoordinates.push({
+        pageNumber: i,
+        text: item.str,
+        x,
+        y,
+        w,
+        h,
+        section: currentSection
+      });
+    }
+  }
+
+  // 2. Load PDF in pdf-lib
+  const pdfDoc = await PDFDocument.load(fileBytes);
+  const pages = pdfDoc.getPages();
+  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  // 3. Match and replace text in place
+  for (const item of textCoordinates) {
+    let replacedText = "";
+    
+    // Rule A: Gemini Optimized bullets replacement
+    if (optimizedBullets && Object.keys(optimizedBullets).length > 0) {
+      for (const [original, optimized] of Object.entries(optimizedBullets)) {
+        if (!original || !optimized) continue;
+        if (item.text.toLowerCase().trim().includes(original.toLowerCase().trim()) || 
+            original.toLowerCase().trim().includes(item.text.toLowerCase().trim())) {
+          replacedText = optimized;
+          break;
+        }
+      }
+    }
+    
+    // Rule B: Local rule-based substitution (Offline fallback)
+    if (!replacedText && (item.section === "experience" || item.section === "projects")) {
+      const substituted = applyVerbSubstitutions(item.text);
+      if (substituted !== item.text) {
+        replacedText = substituted;
+      }
+    }
+
+    // Rule C: Summary tailoring
+    if (!replacedText && item.section === "summary" && tailoredSummary && item.text.length > 30) {
+      replacedText = tailoredSummary;
+    }
+
+    // Erase and overlay text
+    if (replacedText) {
+      const pageIndex = item.pageNumber - 1;
+      if (pageIndex >= pages.length) continue;
+      const page = pages[pageIndex];
+
+      // Draw white rectangle to cover old text
+      page.drawRectangle({
+        x: item.x - 1,
+        y: item.y - 2,
+        width: item.w + 4,
+        height: item.h + 4,
+        color: rgb(1, 1, 1),
+      });
+
+      const isHeader = item.text === item.text.toUpperCase() && item.text.length < 40;
+      const font = isHeader ? helveticaBold : helveticaFont;
+      const fontSize = item.h > 0 ? item.h : 9;
+
+      // Scale font down if text overflows bounding box
+      let drawSize = fontSize;
+      const estimatedNewWidth = replacedText.length * (fontSize * 0.5);
+      if (estimatedNewWidth > item.w + 10 && item.w > 20) {
+        drawSize = Math.max(6, fontSize * (item.w / estimatedNewWidth));
+      }
+
+      page.drawText(replacedText, {
+        x: item.x,
+        y: item.y,
+        size: drawSize,
+        font: font,
+        color: rgb(0, 0, 0),
+      });
+    }
+  }
+
+  return await pdfDoc.save();
+}
+
 // ── Download PDF: extract text from DOCX/PDF or use improvements, build PDF ─────
 async function downloadPdf(file: File, jobDesc: string, optimizedBullets: Record<string, string> | null, tailoredSummary: string | null, parsedResume: ParsedResume | null) {
-  let lines: string[] = [];
+  if (file.name.endsWith(".pdf")) {
+    try {
+      const patchedBytes = await patchPdfFile(file, optimizedBullets, tailoredSummary);
+      triggerDownload(patchedBytes, tweakFilename(file.name, "tailored"), "application/pdf");
+      return;
+    } catch (e) {
+      console.error("PDF patching failed, falling back to clean template:", e);
+    }
+  }
 
+  // Fallback for DOCX uploads or failed patches
+  let lines: string[] = [];
   if (parsedResume) {
     lines = buildTailoredPdfLines(parsedResume, optimizedBullets, tailoredSummary);
   } else {
@@ -647,6 +865,10 @@ export default function App() {
   const [customResults, setCustomResults] = useState<any>(null);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // FastAPI Backend configuration state
+  const [useBackend, setUseBackend] = useState(() => localStorage.getItem("use_fastapi_backend") === "true");
+  const [backendUrl, setBackendUrl] = useState(() => localStorage.getItem("fastapi_backend_url") || "http://localhost:8000");
+
   const canStart = resumeFile !== null && jobDescription.trim().length > 20;
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -700,25 +922,78 @@ export default function App() {
       console.error("Text extraction failed:", e);
     }
 
-    // 2. Call Gemini API if Key is provided
-    if (geminiKey && text) {
+    if (useBackend) {
+      if (!geminiKey) {
+        setApiError("Please provide an API Key before using the backend.");
+        processingRef.current = false;
+        setAppState("idle");
+        return;
+      }
       try {
-        const apiData = await queryGemini(geminiKey, text, jobDescription);
-        setOptimizedBullets(apiData.optimizedBullets);
-        setTailoredSummary(apiData.summary);
-        setCustomResults({
-          atsScore: apiData.atsScore,
-          previousScore: Math.max(35, apiData.atsScore - 25),
-          keywordCoverage: Math.round(apiData.atsScore * 0.9),
-          sectionQuality: Math.round(apiData.atsScore * 1.05),
-          readabilityScore: 80,
-          missingKeywords: apiData.missingKeywords,
-          addedKeywords: apiData.addedKeywords,
-          improvements: apiData.improvements,
+        const formData = new FormData();
+        formData.append("resume", resumeFile);
+        formData.append("job_description", jobDescription);
+        formData.append("portfolio_url", portfolioUrl);
+        formData.append("github_url", githubUrl);
+
+        const response = await fetch(`${backendUrl}/api/analyze`, {
+          method: "POST",
+          headers: {
+            "X-API-Key": geminiKey,
+          },
+          body: formData,
         });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Backend Error: ${response.status} - ${errorText}`);
+        }
+
+        const apiData = await response.json();
+        if (apiData.success) {
+          setOptimizedBullets(apiData.optimized_bullets);
+          setTailoredSummary(apiData.tailored_summary);
+          setCustomResults({
+            atsScore: apiData.ats_score_details.atsScore,
+            previousScore: apiData.ats_score_details.previousScore || Math.max(35, apiData.ats_score_details.atsScore - 25),
+            keywordCoverage: apiData.ats_score_details.keywordCoverage || Math.round(apiData.ats_score_details.atsScore * 0.9),
+            sectionQuality: apiData.ats_score_details.sectionQuality || Math.round(apiData.ats_score_details.atsScore * 1.05),
+            readabilityScore: apiData.ats_score_details.readabilityScore || 80,
+            missingKeywords: apiData.ats_score_details.missingKeywords || [],
+            addedKeywords: apiData.ats_score_details.addedKeywords || [],
+            improvements: apiData.ats_score_details.improvements || [],
+            gapAnalysis: apiData.gap_analysis
+          });
+        } else {
+          throw new Error(apiData.error || "Backend analysis failed.");
+        }
       } catch (err: any) {
-        console.error("API tailoring failed:", err);
-        setApiError(err.message || "Failed to contact Gemini API. Falling back to local offline tailoring.");
+        console.error("Backend tailoring failed:", err);
+        setApiError(err.message || "Failed to contact FastAPI backend.");
+        processingRef.current = false;
+        setAppState("idle");
+        return;
+      }
+    } else {
+      if (geminiKey && text) {
+        try {
+          const apiData = await queryLLM(geminiKey, text, jobDescription);
+          setOptimizedBullets(apiData.optimizedBullets);
+          setTailoredSummary(apiData.summary);
+          setCustomResults({
+            atsScore: apiData.atsScore,
+            previousScore: Math.max(35, apiData.atsScore - 25),
+            keywordCoverage: Math.round(apiData.atsScore * 0.9),
+            sectionQuality: Math.round(apiData.atsScore * 1.05),
+            readabilityScore: 80,
+            missingKeywords: apiData.missingKeywords,
+            addedKeywords: apiData.addedKeywords,
+            improvements: apiData.improvements,
+          });
+        } catch (err: any) {
+          console.error("API tailoring failed:", err);
+          setApiError(err.message || "Failed to contact Gemini API. Falling back to local offline tailoring.");
+        }
       }
     }
 
@@ -740,7 +1015,30 @@ export default function App() {
     if (!resumeFile || downloading) return;
     setDownloading("docx");
     try {
-      await downloadDocx(resumeFile, optimizedBullets, tailoredSummary);
+      if (useBackend) {
+        const formData = new FormData();
+        formData.append("resume", resumeFile);
+        formData.append("optimized_bullets", JSON.stringify(optimizedBullets || {}));
+        formData.append("tailored_summary", tailoredSummary || "");
+
+        const response = await fetch(`${backendUrl}/api/download/docx`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Backend download failed: ${response.status} - ${errorText}`);
+        }
+
+        const blob = await response.blob();
+        triggerDownload(await blob.arrayBuffer(), tweakFilename(resumeFile.name, "tailored"), resumeFile.type);
+      } else {
+        await downloadDocx(resumeFile, optimizedBullets, tailoredSummary);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setApiError(err.message || "Failed to download patched DOCX via backend.");
     } finally {
       setDownloading(null);
     }
@@ -794,18 +1092,45 @@ export default function App() {
           <div className="flex items-center gap-2">
             <input
               type="password"
-              placeholder="Gemini API Key (optional)"
+              placeholder="Gemini / OpenRouter Key"
               value={geminiKey}
               onChange={(e) => {
                 setGeminiKey(e.target.value);
                 localStorage.setItem("gemini_api_key", e.target.value);
               }}
-              className="px-2.5 py-1 text-[11px] bg-card border border-border rounded focus:outline-none focus:border-primary/40 w-44 font-mono"
+              className="px-2.5 py-1 text-[11px] bg-card border border-border rounded focus:outline-none focus:border-primary/40 w-40 font-mono"
             />
             {geminiKey && (
               <span className="flex items-center gap-1 text-[9px] text-primary font-mono bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20">
                 <ShieldCheck size={9} /> Active
               </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 border-l border-border pl-4">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer hover:text-foreground">
+              <input
+                type="checkbox"
+                checked={useBackend}
+                onChange={(e) => {
+                  setUseBackend(e.target.checked);
+                  localStorage.setItem("use_fastapi_backend", String(e.target.checked));
+                }}
+                className="rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+              />
+              <span>Use FastAPI Backend</span>
+            </label>
+            {useBackend && (
+              <input
+                type="text"
+                placeholder="http://localhost:8000"
+                value={backendUrl}
+                onChange={(e) => {
+                  setBackendUrl(e.target.value);
+                  localStorage.setItem("fastapi_backend_url", e.target.value);
+                }}
+                className="px-2 py-0.5 text-[10px] bg-card border border-border rounded focus:outline-none focus:border-primary/40 w-36 font-mono"
+              />
             )}
           </div>
           {appState !== "idle" && (
@@ -1138,6 +1463,68 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              {activeResults.gapAnalysis && (
+                <div className="bg-card border border-border rounded-xl p-6 mb-5">
+                  <div className="flex items-center justify-between mb-4 border-b border-border/40 pb-3">
+                    <div className="flex items-center gap-2">
+                      <Target size={13} className="text-primary" />
+                      <h3 className="text-[10px] font-mono font-medium uppercase tracking-widest text-muted-foreground">Gap Analysis & Action Plan (Agent 5)</h3>
+                    </div>
+                    <span className="text-xs font-semibold px-2.5 py-0.5 bg-primary/10 border border-primary/20 text-primary rounded-full">
+                      Compatibility Score: {activeResults.gapAnalysis.compatibility_score}%
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Skills Breakdown */}
+                    <div>
+                      <div className="mb-4">
+                        <h4 className="text-[11px] font-mono font-medium uppercase tracking-wider text-muted-foreground mb-2">Matching Skills</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeResults.gapAnalysis.matching_skills && activeResults.gapAnalysis.matching_skills.length > 0 ? (
+                            activeResults.gapAnalysis.matching_skills.map((s: string) => (
+                              <span key={s} className="text-[10px] font-mono px-2.5 py-0.5 bg-green-500/10 border border-green-500/20 text-green-400 rounded-full">{s}</span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No matching skills identified yet.</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="text-[11px] font-mono font-medium uppercase tracking-wider text-muted-foreground mb-2">Missing/Gap Skills</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeResults.gapAnalysis.missing_skills && activeResults.gapAnalysis.missing_skills.length > 0 ? (
+                            activeResults.gapAnalysis.missing_skills.map((s: string) => (
+                              <span key={s} className="text-[10px] font-mono px-2.5 py-0.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-full">{s}</span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No gaps identified.</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Plan */}
+                    <div className="border-t md:border-t-0 md:border-l border-border/40 pt-4 md:pt-0 md:pl-6">
+                      <h4 className="text-[11px] font-mono font-medium uppercase tracking-wider text-muted-foreground mb-3">Recommended Action Plan</h4>
+                      <div className="space-y-2.5">
+                        {activeResults.gapAnalysis.action_plan && activeResults.gapAnalysis.action_plan.length > 0 ? (
+                          activeResults.gapAnalysis.action_plan.map((action: string, i: number) => (
+                            <div key={i} className="flex items-start gap-2.5">
+                              <span className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5 flex-shrink-0" />
+                              <p className="text-xs text-foreground/80 leading-normal">{action}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No recommended action plan available.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="bg-primary/5 border border-primary/18 rounded-xl px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>

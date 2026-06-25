@@ -1,0 +1,59 @@
+{
+  "roles": [
+    {
+      "title": "Frontend Engineer",
+      "keywords": ["React", "TypeScript", "Next.js", "Tailwind CSS", "Redux", "GraphQL", "Webpack", "Vite", "Web Performance", "SEO", "Jest", "Cypress", "HTML5", "CSS3", "JavaScript"],
+      "skills": ["UI/UX design translation", "Responsive Web Design", "State Management", "Component Architecture", "Single Page Applications", "Browser Compatibility"],
+      "bullet_templates": [
+        "Architected reusable component libraries using React and TypeScript, reducing development cycle times by 35%.",
+        "Optimized client-side rendering and bundle sizes, resulting in a 40% improvement in Lighthouse performance scores.",
+        "Integrated complex REST/GraphQL APIs with state management solutions like Redux/Zustand for seamless data synchronization.",
+        "Implemented responsive design architectures ensuring full compatibility across diverse mobile and desktop devices."
+      ]
+    },
+    {
+      "title": "Backend Engineer",
+      "keywords": ["Node.js", "Express", "Python", "Django", "Go", "Java", "Spring Boot", "PostgreSQL", "MongoDB", "Redis", "Docker", "Kubernetes", "AWS", "gRPC", "REST APIs", "CI/CD"],
+      "skills": ["API Design & Implementation", "Database Schema Optimization", "Microservices Architecture", "Scalability & Performance", "Caching Strategies", "Cloud Infrastructure"],
+      "bullet_templates": [
+        "Architected robust, high-throughput microservices using Node.js and Go, handling over 1.5 million daily active requests.",
+        "Designed and optimized database schemas in PostgreSQL, reducing query latency times by 50% through indexing and query tuning.",
+        "Spearheaded cloud migration to AWS using Docker and Kubernetes, resulting in a 30% reduction in infrastructure costs.",
+        "Implemented secure authentication and authorization flows utilizing OAuth2 and JSON Web Tokens (JWT)."
+      ]
+    },
+    {
+      "title": "Fullstack Engineer",
+      "keywords": ["React", "Next.js", "Node.js", "Express", "TypeScript", "PostgreSQL", "MongoDB", "REST APIs", "Docker", "AWS", "Git", "Tailwind CSS", "Zustand", "Prisma"],
+      "skills": ["End-to-End Application Development", "Database Integration", "API Design", "State Management", "User Authentication", "DevOps & Deployment"],
+      "bullet_templates": [
+        "Engineered end-to-end full-stack web applications using React and Node.js, improving customer onboarding conversion by 25%.",
+        "Designed relational/non-relational database schemas alongside RESTful APIs, facilitating secure, real-time data streaming.",
+        "Containerized applications using Docker and deployed cloud infrastructure on AWS, enhancing deployment reliability to 99.9%.",
+        "Spearheaded user authentication systems with JWT and bcrypt, securing application routes and personal database schemas."
+      ]
+    },
+    {
+      "title": "Data Scientist & AI Engineer",
+      "keywords": ["Python", "TensorFlow", "PyTorch", "Scikit-Learn", "Pandas", "NumPy", "SQL", "Machine Learning", "Deep Learning", "NLP", "LLMs", "RAG", "Data Visualization", "Jupyter"],
+      "skills": ["Statistical Modeling", "Predictive Analytics", "Data Cleaning & Preprocessing", "Feature Engineering", "Model Evaluation & Deployment", "Neural Network Design"],
+      "bullet_templates": [
+        "Engineered predictive machine learning models using Scikit-Learn and PyTorch, achieving a 92% classification accuracy.",
+        "Built Retrieval-Augmented Generation (RAG) pipelines using LangChain and vector databases, reducing answer retrieval latency by 40%.",
+        "Architected ETL data pipelines processing over 10GB of weekly unstructured data using Python and Pandas.",
+        "Designed and deployed interactive data visualization dashboards, facilitating data-driven decision-making for executive leadership."
+      ]
+    },
+    {
+      "title": "DevOps & Cloud Engineer",
+      "keywords": ["AWS", "Terraform", "Docker", "Kubernetes", "CI/CD", "Jenkins", "GitHub Actions", "Prometheus", "Grafana", "Linux", "Bash", "Ansible", "Nginx", "CloudFormation"],
+      "skills": ["Infrastructure as Code", "Continuous Integration / Continuous Deployment", "Container Orchestration", "Monitoring & Logging", "System Administration", "Network Security"],
+      "bullet_templates": [
+        "Provisioned fully scalable cloud infrastructure on AWS using Terraform (Infrastructure as Code), reducing setup times by 80%.",
+        "Engineered CI/CD pipelines via GitHub Actions, accelerating software deployment release cycles from weekly to multi-daily.",
+        "Implemented container orchestration layouts using Kubernetes, achieving 99.99% system uptime across cluster workloads.",
+        "Integrated active log monitoring services using Prometheus and Grafana, lowering average incident resolution time (MTTR) by 45%."
+      ]
+    }
+  ]
+}
