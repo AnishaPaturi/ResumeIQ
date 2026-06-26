@@ -31,7 +31,9 @@ async def call_gemini(api_key: str, prompt: str, system_instruction: str = "") -
             except (KeyError, IndexError, json.JSONDecodeError) as e:
                 raise Exception(f"Failed to parse OpenRouter response: {e}. Raw: {result}")
     else:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        last_exception = None
+        
         if system_instruction:
             prompt = f"System Instruction: {system_instruction}\n\nUser Request: {prompt}"
             
@@ -45,16 +47,21 @@ async def call_gemini(api_key: str, prompt: str, system_instruction: str = "") -
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload)
-            if response.status_code != 200:
-                raise Exception(f"Gemini API error ({response.status_code}): {response.text}")
+            for model in models:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                try:
+                    response = await client.post(url, json=payload)
+                    if response.status_code == 200:
+                        result = response.json()
+                        text = result["candidates"][0]["content"]["parts"][0]["text"]
+                        return json.loads(text)
+                    else:
+                        raise Exception(f"Gemini API error ({response.status_code}): {response.text}")
+                except Exception as e:
+                    print(f"Model {model} failed, trying next fallback... Error: {e}")
+                    last_exception = e
             
-            result = response.json()
-            try:
-                text = result["candidates"][0]["content"]["parts"][0]["text"]
-                return json.loads(text)
-            except (KeyError, IndexError, json.JSONDecodeError) as e:
-                raise Exception(f"Failed to parse Gemini response: {e}. Raw: {result}")
+            raise last_exception or Exception("All Gemini API models failed.")
 
 # 1. Resume Parsing Agent
 async def resume_parsing_agent(resume_text: str, api_key: str) -> dict:

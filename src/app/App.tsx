@@ -27,8 +27,11 @@ import {
   ClipboardCheck,
 } from "lucide-react";
 
-// Set pdfjs worker source dynamically using CDN matching the installed version
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// Set pdfjs worker source locally matching the installed version
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 type AppState = "idle" | "processing" | "results";
 
@@ -300,6 +303,37 @@ function retrieveRagData(jobDesc: string) {
   return bestRole;
 }
 
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2, initialDelay = 1000): Promise<Response> {
+  let delay = initialDelay;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) {
+        return response;
+      }
+      // Status codes for rate-limiting or server overloads: retry on these.
+      if (response.status === 429 || response.status === 500 || response.status === 503 || response.status === 504) {
+        if (i < maxRetries) {
+          console.warn(`Transient API error (${response.status}) on ${url}. Retrying in ${delay}ms... (Attempt ${i + 1}/${maxRetries})`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          delay *= 2;
+          continue;
+        }
+      }
+      return response;
+    } catch (err) {
+      if (i < maxRetries) {
+        console.warn(`Network error fetching ${url}. Retrying in ${delay}ms... (Attempt ${i + 1}/${maxRetries}):`, err);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay *= 2;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`Request to ${url} failed after ${maxRetries} retries`);
+}
+
 async function queryLLM(apiKey: string, resumeText: string, jobDesc: string): Promise<{
   summary: string;
   optimizedBullets: Record<string, string>;
@@ -350,58 +384,80 @@ Respond ONLY with a JSON object in this format (do NOT include markdown code blo
 `;
 
   if (apiKey.trim().startsWith("sk-or-")) {
-    // OpenRouter API Call
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-        "HTTP-Referer": window.location.origin,
-        "X-Title": "ResumeIQ"
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "user", content: prompt }
-        ],
-        response_format: { type: "json_object" }
-      })
-    });
+    // OpenRouter API Call with fallback models and retry logic
+    const models = ["google/gemini-2.5-flash", "google/gemini-2.0-flash", "google/gemini-1.5-flash"];
+    let lastError = null;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenRouter API Error: ${response.status} - ${errorText}`);
-    }
+    for (const model of models) {
+      try {
+        const response = await fetchWithRetry("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+            "HTTP-Referer": window.location.origin,
+            "X-Title": "ResumeIQ"
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              { role: "user", content: prompt }
+            ],
+            response_format: { type: "json_object" }
+          })
+        });
 
-    const json = await response.json();
-    const text = json.choices[0].message.content;
-    return JSON.parse(text);
-  } else {
-    // Standard Gemini API Call
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          responseMimeType: "application/json"
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`OpenRouter API Error: ${response.status} - ${errorText}`);
         }
-      })
-    });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API Error: ${response.status} - ${errorText}`);
+        const json = await response.json();
+        const text = json.choices[0].message.content;
+        return JSON.parse(text);
+      } catch (err: any) {
+        console.warn(`OpenRouter model ${model} failed, trying fallback...`, err);
+        lastError = err;
+      }
     }
+    throw lastError || new Error("All OpenRouter models failed.");
+  } else {
+    // Standard Gemini API Call with fallback models and retry logic
+    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    let lastError = null;
 
-    const json = await response.json();
-    const text = json.candidates[0].content.parts[0].text;
-    return JSON.parse(text);
+    for (const model of models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const response = await fetchWithRetry(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: prompt }]
+            }],
+            generationConfig: {
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Gemini API Error: ${response.status} - ${errorText}`);
+        }
+
+        const json = await response.json();
+        const text = json.candidates[0].content.parts[0].text;
+        return JSON.parse(text);
+      } catch (err: any) {
+        console.warn(`Gemini model ${model} failed, trying fallback...`, err);
+        lastError = err;
+      }
+    }
+    throw lastError || new Error("All Gemini models failed.");
   }
 }
 
