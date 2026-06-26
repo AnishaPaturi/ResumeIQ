@@ -311,8 +311,35 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2,
       if (response.ok) {
         return response;
       }
-      // Status codes for rate-limiting or server overloads: retry on these.
-      if (response.status === 429 || response.status === 500 || response.status === 503 || response.status === 504) {
+
+      // Handle Rate Limits (429) specifically by parsing retryDelay
+      if (response.status === 429) {
+        let sleepTime = 38000; // default 38 seconds fallback
+        try {
+          const errData = await response.clone().json();
+          const details = errData?.error?.details || [];
+          for (const detail of details) {
+            if (detail.retryDelay) {
+              const seconds = parseFloat(detail.retryDelay.replace("s", ""));
+              if (!isNaN(seconds)) {
+                sleepTime = seconds * 1000;
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          // ignore parsing error
+        }
+
+        if (i < maxRetries) {
+          console.warn(`Rate limit (429) on ${url}. Waiting for ${sleepTime / 1000}s before retrying... (Attempt ${i + 1}/${maxRetries})`);
+          await new Promise((resolve) => setTimeout(resolve, sleepTime));
+          continue;
+        }
+      }
+
+      // Status codes for server overloads: retry on these.
+      if (response.status === 500 || response.status === 503 || response.status === 504) {
         if (i < maxRetries) {
           console.warn(`Transient API error (${response.status}) on ${url}. Retrying in ${delay}ms... (Attempt ${i + 1}/${maxRetries})`);
           await new Promise((resolve) => setTimeout(resolve, delay));
@@ -385,7 +412,17 @@ Respond ONLY with a JSON object in this format (do NOT include markdown code blo
 
   if (apiKey.trim().startsWith("sk-or-")) {
     // OpenRouter API Call with fallback models and retry logic
-    const models = ["google/gemini-2.5-flash", "google/gemini-2.0-flash", "google/gemini-1.5-flash"];
+    const models = [
+      "google/gemini-3.5-flash",
+      "google/gemini-2.5-flash",
+      "google/gemini-2.0-flash",
+      "google/gemini-2.0-flash-lite",
+      "google/gemini-3.1-flash-lite",
+      "google/gemini-2.5-flash-lite",
+      "google/gemini-flash-latest",
+      "google/gemini-flash-lite-latest",
+      "google/gemini-pro-latest"
+    ];
     let lastError = null;
 
     for (const model of models) {
@@ -423,7 +460,17 @@ Respond ONLY with a JSON object in this format (do NOT include markdown code blo
     throw lastError || new Error("All OpenRouter models failed.");
   } else {
     // Standard Gemini API Call with fallback models and retry logic
-    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    const models = [
+      "gemini-3.5-flash",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-2.5-flash-lite",
+      "gemini-flash-latest",
+      "gemini-flash-lite-latest",
+      "gemini-pro-latest"
+    ];
     let lastError = null;
 
     for (const model of models) {

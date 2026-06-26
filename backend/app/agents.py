@@ -1,45 +1,99 @@
 import json
 import httpx
+import asyncio
+import os
 
 async def call_gemini(api_key: str, prompt: str, system_instruction: str = "") -> dict:
-    """Helper to query the Gemini API or OpenRouter with JSON output constraint."""
-    if api_key.startswith("sk-or-"):
+    """Helper to query OpenRouter as default and fallback to standard Gemini API."""
+    # Gather keys from parameter or env vars
+    openrouter_key = api_key if api_key.startswith("sk-or-") else os.environ.get("OPENROUTER_API_KEY")
+    gemini_key = api_key if not api_key.startswith("sk-or-") else os.environ.get("GEMINI_API_KEY")
+    
+    last_exception = None
+    
+    # 1. Query OpenRouter first if a key is available
+    if openrouter_key:
+        models = [
+            "google/gemini-2.5-flash",
+            "google/gemini-2.0-flash",
+            "google/gemini-2.0-flash-lite",
+            "google/gemini-flash-latest",
+            "google/gemini-pro-latest"
+        ]
+        
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {openrouter_key}",
             "HTTP-Referer": "http://localhost:3000",
             "X-Title": "ResumeIQ"
         }
-        if system_instruction:
-            prompt = f"System Instruction: {system_instruction}\n\nUser Request: {prompt}"
-        payload = {
-            "model": "google/gemini-2.5-flash",
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "response_format": {"type": "json_object"}
-        }
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            if response.status_code != 200:
-                raise Exception(f"OpenRouter API error ({response.status_code}): {response.text}")
-            result = response.json()
-            try:
-                text = result["choices"][0]["message"]["content"]
-                return json.loads(text)
-            except (KeyError, IndexError, json.JSONDecodeError) as e:
-                raise Exception(f"Failed to parse OpenRouter response: {e}. Raw: {result}")
-    else:
-        models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-        last_exception = None
         
+        openrouter_prompt = prompt
         if system_instruction:
-            prompt = f"System Instruction: {system_instruction}\n\nUser Request: {prompt}"
+            openrouter_prompt = f"System Instruction: {system_instruction}\n\nUser Request: {prompt}"
+            
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for model in models:
+                max_retries = 3
+                initial_delay = 2.0
+                delay = initial_delay
+                
+                for attempt in range(max_retries):
+                    try:
+                        payload = {
+                            "model": model,
+                            "messages": [
+                                {"role": "user", "content": openrouter_prompt}
+                            ],
+                            "response_format": {"type": "json_object"}
+                        }
+                        response = await client.post(url, json=payload, headers=headers)
+                        
+                        # Handle Rate Limits (429) specifically
+                        if response.status_code == 429:
+                            if attempt < max_retries - 1:
+                                print(f"OpenRouter Rate limit (429) for {model}. Waiting for 5s...")
+                                await asyncio.sleep(5.0)
+                                continue
+                                
+                        if response.status_code == 200:
+                            result = response.json()
+                            text = result["choices"][0]["message"]["content"]
+                            return json.loads(text)
+                            
+                        raise Exception(f"OpenRouter API error ({response.status_code}): {response.text}")
+                    except Exception as e:
+                        if attempt < max_retries - 1 and any(ec in str(e) for ec in ["429", "500", "503", "504"]):
+                            await asyncio.sleep(delay)
+                            delay *= 2
+                            continue
+                        print(f"OpenRouter Model {model} failed. Error: {e}")
+                        last_exception = e
+                        break
+        print("OpenRouter failed completely. Attempting fallback to standard Gemini API...")
+
+    # 2. Fall back to standard Gemini API if key is available
+    if gemini_key:
+        models = [
+            "gemini-3.5-flash",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-2.5-flash-lite",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-pro-latest"
+        ]
+        
+        gemini_prompt = prompt
+        if system_instruction:
+            gemini_prompt = f"System Instruction: {system_instruction}\n\nUser Request: {prompt}"
             
         payload = {
             "contents": [{
-                "parts": [{"text": prompt}]
+                "parts": [{"text": gemini_prompt}]
             }],
             "generationConfig": {
                 "responseMimeType": "application/json"
@@ -48,20 +102,70 @@ async def call_gemini(api_key: str, prompt: str, system_instruction: str = "") -
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             for model in models:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                try:
-                    response = await client.post(url, json=payload)
-                    if response.status_code == 200:
-                        result = response.json()
-                        text = result["candidates"][0]["content"]["parts"][0]["text"]
-                        return json.loads(text)
-                    else:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
+                
+                max_retries = 3
+                initial_delay = 2.0  # seconds
+                delay = initial_delay
+                
+                for attempt in range(max_retries):
+                    try:
+                        response = await client.post(url, json=payload)
+                        if response.status_code == 200:
+                            result = response.json()
+                            text = result["candidates"][0]["content"]["parts"][0]["text"]
+                            return json.loads(text)
+                        
+                        # Handle Rate Limits (429) specifically by parsing retryDelay
+                        if response.status_code == 429:
+                            sleep_time = 38.0  # default fallback based on Google quota duration
+                            try:
+                                err_data = response.json()
+                                for detail in err_data.get("error", {}).get("details", []):
+                                    if "RetryInfo" in detail.get("@type", "") or "retryDelay" in detail:
+                                        retry_delay_str = detail.get("retryDelay", "38s")
+                                        sleep_time = float(retry_delay_str.rstrip("s"))
+                                        break
+                            except Exception:
+                                pass
+                            
+                            if attempt < max_retries - 1:
+                                print(f"Rate limit (429) hit for {model}. Waiting for {sleep_time} seconds before retrying...")
+                                await asyncio.sleep(sleep_time)
+                                continue
+                        
+                        # Retrying on temporary server issues (500, 503, 504)
+                        if response.status_code in [500, 503, 504]:
+                            if attempt < max_retries - 1:
+                                print(f"Transient error {response.status_code} for {model}. Retrying in {delay}s...")
+                                await asyncio.sleep(delay)
+                                delay *= 2
+                                continue
+                        
                         raise Exception(f"Gemini API error ({response.status_code}): {response.text}")
-                except Exception as e:
-                    print(f"Model {model} failed, trying next fallback... Error: {e}")
-                    last_exception = e
+                    except Exception as e:
+                        err_str = str(e)
+                        is_429 = "429" in err_str
+                        is_transient = any(err_code in err_str for err_code in ["500", "503", "504"])
+                        
+                        if attempt < max_retries - 1:
+                            if is_429:
+                                print(f"Rate limit Exception during request for {model}: {e}. Waiting for 38 seconds...")
+                                await asyncio.sleep(38.0)
+                                continue
+                            elif is_transient:
+                                print(f"Transient Exception during request for {model}: {e}. Retrying in {delay}s...")
+                                await asyncio.sleep(delay)
+                                delay *= 2
+                                continue
+                        
+                        print(f"Model {model} failed, trying next fallback... Error: {e}")
+                        last_exception = e
+                        break
             
             raise last_exception or Exception("All Gemini API models failed.")
+            
+    raise last_exception or Exception("No valid API Key (OpenRouter or standard Gemini) could be found.")
 
 # 1. Resume Parsing Agent
 async def resume_parsing_agent(resume_text: str, api_key: str) -> dict:
