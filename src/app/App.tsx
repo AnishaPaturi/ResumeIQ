@@ -914,7 +914,7 @@ export default function App() {
   const processingRef = useRef(false);
 
   // Gemini API and dynamic tailoring state
-  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("gemini_api_key") || (import.meta.env.VITE_GEMINI_API_KEY as string) || "");
+  const [geminiKey, setGeminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || "");
   const [parsedResume, setParsedResume] = useState<ParsedResume | null>(null);
   const [optimizedBullets, setOptimizedBullets] = useState<Record<string, string> | null>(null);
   const [tailoredSummary, setTailoredSummary] = useState<string | null>(null);
