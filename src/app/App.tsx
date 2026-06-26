@@ -914,7 +914,7 @@ export default function App() {
   const processingRef = useRef(false);
 
   // Gemini API and dynamic tailoring state
-  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("gemini_api_key") || (import.meta.env.VITE_GEMINI_API_KEY as string) || "");
   const [parsedResume, setParsedResume] = useState<ParsedResume | null>(null);
   const [optimizedBullets, setOptimizedBullets] = useState<Record<string, string> | null>(null);
   const [tailoredSummary, setTailoredSummary] = useState<string | null>(null);
@@ -979,12 +979,6 @@ export default function App() {
     }
 
     if (useBackend) {
-      if (!geminiKey) {
-        setApiError("Please provide an API Key before using the backend.");
-        processingRef.current = false;
-        setAppState("idle");
-        return;
-      }
       try {
         const formData = new FormData();
         formData.append("resume", resumeFile);
@@ -1031,7 +1025,13 @@ export default function App() {
         return;
       }
     } else {
-      if (geminiKey && text) {
+      if (!geminiKey) {
+        setApiError("Please provide a Gemini API Key in the settings at the top right.");
+        processingRef.current = false;
+        setAppState("idle");
+        return;
+      }
+      if (text) {
         try {
           const apiData = await queryLLM(geminiKey, text, jobDescription);
           setOptimizedBullets(apiData.optimizedBullets);

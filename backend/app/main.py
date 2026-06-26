@@ -1,4 +1,5 @@
 import json
+import os
 from fastapi import FastAPI, UploadFile, File, Form, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -41,10 +42,13 @@ async def analyze_resume_endpoint(
     github_url: str = Form(""),
     x_api_key: str = Header(None) # Accept API key from request header
 ):
-    # Ensure API Key is provided
-    api_key = x_api_key
+    # Ensure API Key is provided (checking request header or server-side env vars)
+    api_key = x_api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=400, detail="Missing API Key in headers (X-API-Key)")
+        raise HTTPException(
+            status_code=400,
+            detail="Missing API Key. Please enter an API key in the frontend settings, or configure the GEMINI_API_KEY / OPENROUTER_API_KEY environment variable on the server."
+        )
     
     try:
         # Read file bytes
