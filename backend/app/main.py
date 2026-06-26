@@ -5,6 +5,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import io
 
+# Helper to load .env manually from the backend root folder
+def load_dotenv():
+    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    if os.path.exists(dotenv_path):
+        with open(dotenv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip().strip("'\"")
+                os.environ[key] = val
+
+load_dotenv()
+
 from .utils import (
     extract_text_from_pdf,
     extract_text_from_docx,

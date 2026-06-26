@@ -988,9 +988,9 @@ export default function App() {
 
         const response = await fetch(`${backendUrl}/api/analyze`, {
           method: "POST",
-          headers: {
+          headers: geminiKey ? {
             "X-API-Key": geminiKey,
-          },
+          } : {},
           body: formData,
         });
 
@@ -1145,25 +1145,7 @@ export default function App() {
           <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.18em] ml-0.5">AI</span>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              placeholder="Gemini / OpenRouter Key"
-              value={geminiKey}
-              onChange={(e) => {
-                setGeminiKey(e.target.value);
-                localStorage.setItem("gemini_api_key", e.target.value);
-              }}
-              className="px-2.5 py-1 text-[11px] bg-card border border-border rounded focus:outline-none focus:border-primary/40 w-40 font-mono"
-            />
-            {geminiKey && (
-              <span className="flex items-center gap-1 text-[9px] text-primary font-mono bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20">
-                <ShieldCheck size={9} /> Active
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3 border-l border-border pl-4">
+          <div className="flex items-center gap-3">
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer hover:text-foreground">
               <input
                 type="checkbox"
