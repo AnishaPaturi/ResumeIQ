@@ -10,12 +10,13 @@ async def call_gemini(api_key: str, prompt: str, system_instruction: str = "") -
         raise Exception("Missing OpenRouter API Key. Please configure the OPENROUTER_API_KEY in your backend/.env file.")
         
     models = [
-        "google/gemini-2.5-flash:free",
-        "google/gemini-2.0-flash-exp:free",
-        "google/gemini-2.0-flash-lite-preview:free",
-        "google/gemini-flash-1.5-8b:free",
-        "meta-llama/llama-3.1-8b-instruct:free",
-        "qwen/qwen-2-7b-instruct:free"
+        "google/gemma-4-26b-a4b-it:free",
+        "google/gemma-4-31b-it:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "nousresearch/hermes-3-llama-3.1-405b:free",
+        "qwen/qwen3-coder:free",
+        "meta-llama/llama-3.2-3b-instruct:free",
+        "liquid/lfm-2.5-1.2b-instruct:free",
     ]
     
     url = "https://openrouter.ai/api/v1/chat/completions"
