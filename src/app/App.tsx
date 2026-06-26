@@ -410,102 +410,49 @@ Respond ONLY with a JSON object in this format (do NOT include markdown code blo
 }
 `;
 
-  if (apiKey.trim().startsWith("sk-or-")) {
-    // OpenRouter API Call with fallback models and retry logic
-    const models = [
-      "google/gemini-3.5-flash",
-      "google/gemini-2.5-flash",
-      "google/gemini-2.0-flash",
-      "google/gemini-2.0-flash-lite",
-      "google/gemini-3.1-flash-lite",
-      "google/gemini-2.5-flash-lite",
-      "google/gemini-flash-latest",
-      "google/gemini-flash-lite-latest",
-      "google/gemini-pro-latest"
-    ];
-    let lastError = null;
+  const models = [
+    "google/gemini-2.5-flash:free",
+    "google/gemini-2.0-flash-exp:free",
+    "google/gemini-2.0-flash-lite-preview:free",
+    "google/gemini-flash-1.5-8b:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "qwen/qwen-2-7b-instruct:free"
+  ];
+  let lastError = null;
 
-    for (const model of models) {
-      try {
-        const response = await fetchWithRetry("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-            "HTTP-Referer": window.location.origin,
-            "X-Title": "ResumeIQ"
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              { role: "user", content: prompt }
-            ],
-            response_format: { type: "json_object" }
-          })
-        });
+  for (const model of models) {
+    try {
+      const response = await fetchWithRetry("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "ResumeIQ"
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: "user", content: prompt }
+          ],
+          response_format: { type: "json_object" }
+        })
+      });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`OpenRouter API Error: ${response.status} - ${errorText}`);
-        }
-
-        const json = await response.json();
-        const text = json.choices[0].message.content;
-        return JSON.parse(text);
-      } catch (err: any) {
-        console.warn(`OpenRouter model ${model} failed, trying fallback...`, err);
-        lastError = err;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API Error: ${response.status} - ${errorText}`);
       }
+
+      const json = await response.json();
+      const text = json.choices[0].message.content;
+      return JSON.parse(text);
+    } catch (err: any) {
+      console.warn(`OpenRouter model ${model} failed, trying fallback...`, err);
+      lastError = err;
     }
-    throw lastError || new Error("All OpenRouter models failed.");
-  } else {
-    // Standard Gemini API Call with fallback models and retry logic
-    const models = [
-      "gemini-3.5-flash",
-      "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-3.1-flash-lite",
-      "gemini-2.5-flash-lite",
-      "gemini-flash-latest",
-      "gemini-flash-lite-latest",
-      "gemini-pro-latest"
-    ];
-    let lastError = null;
-
-    for (const model of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const response = await fetchWithRetry(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{ text: prompt }]
-            }],
-            generationConfig: {
-              responseMimeType: "application/json"
-            }
-          })
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Gemini API Error: ${response.status} - ${errorText}`);
-        }
-
-        const json = await response.json();
-        const text = json.candidates[0].content.parts[0].text;
-        return JSON.parse(text);
-      } catch (err: any) {
-        console.warn(`Gemini model ${model} failed, trying fallback...`, err);
-        lastError = err;
-      }
-    }
-    throw lastError || new Error("All Gemini models failed.");
   }
+  throw lastError || new Error("All OpenRouter models failed.");
 }
 
 // ── Download DOCX: open uploaded file with JSZip, patch XML, re-download ────
@@ -961,7 +908,7 @@ export default function App() {
   const processingRef = useRef(false);
 
   // Gemini API and dynamic tailoring state
-  const [geminiKey, setGeminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || "");
+  const [openRouterKey, setOpenRouterKey] = useState(() => (import.meta.env.VITE_OPENROUTER_API_KEY as string) || "");
   const [parsedResume, setParsedResume] = useState<ParsedResume | null>(null);
   const [optimizedBullets, setOptimizedBullets] = useState<Record<string, string> | null>(null);
   const [tailoredSummary, setTailoredSummary] = useState<string | null>(null);
@@ -1035,8 +982,8 @@ export default function App() {
 
         const response = await fetch(`${backendUrl}/api/analyze`, {
           method: "POST",
-          headers: geminiKey ? {
-            "X-API-Key": geminiKey,
+          headers: openRouterKey ? {
+            "X-API-Key": openRouterKey,
           } : {},
           body: formData,
         });
@@ -1072,15 +1019,15 @@ export default function App() {
         return;
       }
     } else {
-      if (!geminiKey) {
-        setApiError("Please provide a Gemini API Key in the settings at the top right.");
+      if (!openRouterKey) {
+        setApiError("Please configure the VITE_OPENROUTER_API_KEY environment variable.");
         processingRef.current = false;
         setAppState("idle");
         return;
       }
       if (text) {
         try {
-          const apiData = await queryLLM(geminiKey, text, jobDescription);
+          const apiData = await queryLLM(openRouterKey, text, jobDescription);
           setOptimizedBullets(apiData.optimizedBullets);
           setTailoredSummary(apiData.summary);
           setCustomResults({
@@ -1095,7 +1042,7 @@ export default function App() {
           });
         } catch (err: any) {
           console.error("API tailoring failed:", err);
-          setApiError(err.message || "Failed to contact Gemini API. Falling back to local offline tailoring.");
+          setApiError(err.message || "Failed to contact OpenRouter API.");
         }
       }
     }

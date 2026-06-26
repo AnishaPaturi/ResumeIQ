@@ -17,7 +17,9 @@ def load_dotenv():
                 key, val = line.split("=", 1)
                 key = key.strip()
                 val = val.strip().strip("'\"")
-                os.environ[key] = val
+                # Do not overwrite existing variables, and ignore placeholder values
+                if key not in os.environ and not (val.startswith("your_") or "placeholder" in val or val.endswith("_here")):
+                    os.environ[key] = val
 
 load_dotenv()
 
@@ -60,10 +62,10 @@ async def analyze_resume_endpoint(
 ):
     # Ensure OpenRouter API Key is provided
     api_key = x_api_key or os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
+    if not api_key or api_key.startswith("your_") or "placeholder" in api_key or api_key.endswith("_here"):
         raise HTTPException(
             status_code=400,
-            detail="Missing API Key. Please configure the OPENROUTER_API_KEY environment variable in your backend/.env file."
+            detail="Missing API Key. Please replace the placeholder in your backend/.env file with a valid OpenRouter API Key (starting with sk-or-...)."
         )
     
     try:

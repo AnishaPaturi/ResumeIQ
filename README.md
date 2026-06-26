@@ -94,11 +94,8 @@ AI agents analyze the resume sequentially and generate insights that are display
 * Httpx (Async HTTP calls)
 * Uvicorn (ASGI web server)
 
-## AI Integration
-
-* OpenRouter API (Default)
-* Google Gemini API (Fallback)
-* Cascading fallback models (`gemini-2.0-flash`, `gemini-1.5-flash`, etc.) with intelligent rate limit retry handling.
+* OpenRouter API
+* Cascading fallback models (`google/gemini-2.5-flash`, `google/gemini-2.0-flash`, `google/gemini-2.0-flash-lite`, etc.) with intelligent rate limit retry handling.
 
 ---
 
@@ -144,14 +141,11 @@ pip install -r requirements.txt
 
 ### 2️⃣ Configure Environment Variables
 
-Create or open the `.env` file inside the `backend/` folder and paste your keys:
+Create or open the `.env` file inside the `backend/` folder and paste your key:
 
 ```env
-# OpenRouter Key (Default)
+# OpenRouter API Key
 OPENROUTER_API_KEY=your_openrouter_key_here
-
-# Standard Gemini API Key (Fallback if OpenRouter fails or has no quota)
-GEMINI_API_KEY=your_gemini_key_here
 ```
 
 ---
