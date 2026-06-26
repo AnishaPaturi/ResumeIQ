@@ -147,3 +147,84 @@ async def download_tailored_docx(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/download/pdf")
+def download_tailored_pdf_endpoint(
+    resume: UploadFile = File(...),
+    optimized_bullets: str = Form(...),
+    tailored_summary: str = Form("")
+):
+    try:
+        file_bytes = resume.file.read()
+        bullets_dict = json.loads(optimized_bullets)
+        
+        if resume.filename.endswith(".docx"):
+            patched_bytes = template_preservation_agent(
+                file_bytes, bullets_dict, tailored_summary, resume.filename
+            )
+            
+            import tempfile
+            import os
+            import win32com.client
+            import pythoncom
+            import uuid
+            
+            # Create a unique temp folder in the backend directory
+            temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp_pdf_gen")
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            unique_id = str(uuid.uuid4())
+            docx_temp_path = os.path.abspath(os.path.join(temp_dir, f"{unique_id}.docx"))
+            pdf_temp_path = os.path.abspath(os.path.join(temp_dir, f"{unique_id}.pdf"))
+            
+            try:
+                # Write the patched docx bytes to disk
+                with open(docx_temp_path, "wb") as f:
+                    f.write(patched_bytes)
+                
+                # Perform COM automation to export as PDF
+                pythoncom.CoInitialize()
+                try:
+                    word = win32com.client.Dispatch("Word.Application")
+                    word.Visible = False
+                    word.DisplayAlerts = 0
+                    try:
+                        doc = word.Documents.Open(docx_temp_path, False, True) # ConfirmConversions=False, ReadOnly=True
+                        doc.ExportAsFixedFormat(pdf_temp_path, 17, False) # wdExportFormatPDF = 17
+                        doc.Close(SaveChanges=0)
+                    finally:
+                        word.Quit()
+                finally:
+                    pythoncom.CoUninitialize()
+                
+                # Read the generated PDF
+                if os.path.exists(pdf_temp_path):
+                    with open(pdf_temp_path, "rb") as f:
+                        pdf_bytes = f.read()
+                else:
+                    raise Exception("Failed to generate PDF from DOCX via Microsoft Word automation.")
+            finally:
+                # Clean up temp files
+                if os.path.exists(docx_temp_path):
+                    try:
+                        os.remove(docx_temp_path)
+                    except:
+                        pass
+                if os.path.exists(pdf_temp_path):
+                    try:
+                        os.remove(pdf_temp_path)
+                    except:
+                        pass
+            
+            return StreamingResponse(
+                io.BytesIO(pdf_bytes),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename=optimized_{resume.filename.replace('.docx', '.pdf')}"}
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Backend PDF conversion is only supported for DOCX templates."
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1098,7 +1098,30 @@ export default function App() {
     if (!resumeFile || downloading) return;
     setDownloading("pdf");
     try {
-      await downloadPdf(resumeFile, jobDescription, optimizedBullets, tailoredSummary, parsedResume);
+      if (resumeFile.name.endsWith(".docx")) {
+        const formData = new FormData();
+        formData.append("resume", resumeFile);
+        formData.append("optimized_bullets", JSON.stringify(optimizedBullets));
+        formData.append("tailored_summary", tailoredSummary || "");
+        
+        const response = await fetch(`${backendUrl}/api/download/pdf`, {
+          method: "POST",
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Backend PDF download failed: ${response.status} - ${errorText}`);
+        }
+        
+        const blob = await response.blob();
+        triggerDownload(await blob.arrayBuffer(), tweakFilename(resumeFile.name, "tailored").replace(/\.docx$/i, ".pdf"), "application/pdf");
+      } else {
+        await downloadPdf(resumeFile, jobDescription, optimizedBullets, tailoredSummary, parsedResume);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setApiError(err.message || "Failed to download patched PDF.");
     } finally {
       setDownloading(null);
     }
@@ -1410,24 +1433,7 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="flex gap-3 flex-shrink-0">
-                  <button
-                    onClick={handleDownloadDocx}
-                    disabled={!!downloading}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-card border border-border hover:border-primary/35 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {downloading === "docx" ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
-                    {downloading === "docx" ? "Generating…" : "Download DOCX"}
-                  </button>
-                  <button
-                    onClick={handleDownloadPdf}
-                    disabled={!!downloading}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all duration-200 hover:shadow-[0_0_18px_rgba(30,216,164,0.28)] disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {downloading === "pdf" ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                    {downloading === "pdf" ? "Generating…" : "Download PDF"}
-                  </button>
-                </div>
+
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -1558,34 +1564,7 @@ export default function App() {
                 </div>
               )}
 
-              <div className="bg-primary/5 border border-primary/18 rounded-xl px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-bold mb-0.5" style={{ fontFamily: "var(--font-display,'Playfair Display',serif)" }}>
-                    Ready to apply?
-                  </h3>
-                <p className="text-sm text-muted-foreground">
-                  Your original template is fully preserved — download and submit directly.
-                </p>
-              </div>
-              <div className="flex gap-3 flex-shrink-0">
-                <button
-                  onClick={handleDownloadDocx}
-                  disabled={!!downloading}
-                  className="flex items-center gap-2 px-5 py-3 bg-card border border-border hover:border-primary/35 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-60"
-                >
-                  {downloading === "docx" ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
-                  {downloading === "docx" ? "Generating…" : "DOCX"}
-                </button>
-                <button
-                  onClick={handleDownloadPdf}
-                  disabled={!!downloading}
-                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all duration-200 hover:shadow-[0_0_22px_rgba(30,216,164,0.32)] disabled:opacity-60"
-                >
-                  {downloading === "pdf" ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                  {downloading === "pdf" ? "Generating…" : "PDF Download"}
-                </button>
-              </div>
-            </div>
+
           </div>
         );
       })()}
