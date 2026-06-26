@@ -58,12 +58,12 @@ async def analyze_resume_endpoint(
     github_url: str = Form(""),
     x_api_key: str = Header(None) # Accept API key from request header
 ):
-    # Ensure at least one API Key is provided (preferring OpenRouter first, then Gemini)
-    api_key = x_api_key or os.environ.get("OPENROUTER_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    # Ensure OpenRouter API Key is provided
+    api_key = x_api_key or os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         raise HTTPException(
             status_code=400,
-            detail="Missing API Key. Please configure the OPENROUTER_API_KEY or GEMINI_API_KEY environment variable in your backend/.env file."
+            detail="Missing API Key. Please configure the OPENROUTER_API_KEY environment variable in your backend/.env file."
         )
     
     try:

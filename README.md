@@ -80,251 +80,110 @@ AI agents analyze the resume sequentially and generate insights that are display
 
 ## Frontend
 
-* React
+* React (TypeScript)
 * Vite
-* TailwindCSS
-* Axios
-* React Router
+* TailwindCSS / @tailwindcss/vite
+* Lucide React (Icons)
+* PDFJS (Local client-side text extraction worker)
+* jsPDF & JSZip (Client-side document editing & downloads)
 
 ## Backend
 
-* Node.js
-* Express.js
-* MongoDB
-* JWT Authentication
-* Multer (file upload)
+* Python
+* FastAPI
+* Httpx (Async HTTP calls)
+* Uvicorn (ASGI web server)
 
 ## AI Integration
 
-* OpenRouter API
-* Claude / DeepSeek models
-
-## Utilities
-
-* pdf-parse (resume text extraction)
-* bcryptjs (password hashing)
+* OpenRouter API (Default)
+* Google Gemini API (Fallback)
+* Cascading fallback models (`gemini-2.0-flash`, `gemini-1.5-flash`, etc.) with intelligent rate limit retry handling.
 
 ---
 
 # 📁 Complete Project Folder Structure
 
 ```text
-RESUMEAI
+ResumeIQ
 │
-├── frontend
-│   │
-│   ├── node_modules
-│   │
-│   ├── src
-│   │   │
-│   │   ├── components
-│   │   │   │
-│   │   │   └── ProtectedRoute.jsx
-│   │   │       Protects routes that require authentication
-│   │   │
-│   │   ├── context
-│   │   │   │
-│   │   │   └── AuthContext.jsx
-│   │   │       Handles login state, authentication logic,
-│   │   │       and JWT token management
-│   │   │
-│   │   ├── pages
-│   │   │   │
-│   │   │   ├── Login.jsx
-│   │   │   │   Login page UI and authentication request
-│   │   │   │
-│   │   │   ├── Signup.jsx
-│   │   │   │   User registration page
-│   │   │   │
-│   │   │   ├── Dashboard.jsx
-│   │   │   │   Displays AI analysis results
-│   │   │   │
-│   │   │   └── UploadResume.jsx
-│   │   │       Resume upload interface
-│   │   │
-│   │   ├── services
-│   │   │   │
-│   │   │   └── api.js
-│   │   │       Central API configuration using Axios
-│   │   │
-│   │   ├── App.jsx
-│   │   │   Main React application router
-│   │   │
-│   │   ├── main.jsx
-│   │   │   React entry point
-│   │   │
-│   │   └── index.css
-│   │       Tailwind global styles
-│   │
-│   ├── index.html
-│   │   HTML root template
-│   │
-│   ├── package.json
-│   │   Frontend dependencies
-│   │
-│   ├── vite.config.js
-│   │   Vite configuration
-│   │
-│   ├── tailwind.config.js
-│   │   Tailwind configuration
-│   │
-│   └── postcss.config.js
-│       PostCSS configuration
+├── src                     # Frontend React Source
+│   ├── app
+│   │   └── App.tsx         # Core resume analysis dashboard & UI
+│   ├── data
+│   │   └── knowledge_base.json # RAG Industry knowledge base
+│   ├── styles
+│   │   └── index.css       # Styling & tailwind integrations
+│   └── main.tsx            # React application entry point
 │
+├── backend                 # Python FastAPI Backend
+│   ├── app
+│   │   ├── main.py         # FastAPI endpoints & .env loader
+│   │   ├── agents.py       # Multi-agent prompt pipelines & API call fallback logic
+│   │   └── utils.py        # PDF & Word text extraction helpers
+│   ├── .env                # Server-side API key configuration
+│   └── requirements.txt    # Python package dependencies
 │
-├── backend
-│   │
-│   ├── controllers
-│   │   │
-│   │   ├── authController.js
-│   │   │   Handles login and registration logic
-│   │   │
-│   │   └── resumeController.js
-│   │       Handles resume analysis workflow
-│   │
-│   ├── routes
-│   │   │
-│   │   ├── authRoutes.js
-│   │   │   API routes for login and signup
-│   │   │
-│   │   └── resumeRoutes.js
-│   │       API routes for resume upload and analysis
-│   │
-│   ├── models
-│   │   │
-│   │   └── User.js
-│   │       MongoDB schema for user accounts
-│   │
-│   ├── middleware
-│   │   │
-│   │   └── authMiddleware.js
-│   │       Verifies JWT token for protected routes
-│   │
-│   ├── agents
-│   │   │
-│   │   ├── parserAgent.js
-│   │   │   Extracts information from resume
-│   │   │
-│   │   ├── scoringAgent.js
-│   │   │   Generates ATS-style resume score
-│   │   │
-│   │   ├── matcherAgent.js
-│   │   │   Compares resume with job requirements
-│   │   │
-│   │   └── advisorAgent.js
-│   │       Suggests skills and improvements
-│   │
-│   ├── utils
-│   │   │
-│   │   └── extractText.js
-│   │       Extracts text from uploaded PDF resumes
-│   │
-│   ├── uploads
-│   │   Temporary storage for uploaded resumes
-│   │
-│   ├── server.js
-│   │   Main backend server entry point
-│   │
-│   ├── package.json
-│   │   Backend dependencies
-│   │
-│   └── .env
-│       Environment variables
-│
-└── README.md
+├── package.json            # React/Vite dependencies & build scripts
+├── vite.config.ts          # Vite configuration
+└── README.md               # Documentation
 ```
 
 ---
 
 # ⚙️ Backend Installation
 
-### 1️⃣ Navigate to backend
+### 1️⃣ Navigate to backend and install requirements
 
-```
+```bash
 cd backend
-```
-
-### 2️⃣ Install dependencies
-
-```
-npm install
-```
-
-### Required Backend Packages
-
-```
-express
-mongoose
-cors
-dotenv
-bcryptjs
-jsonwebtoken
-multer
-pdf-parse
-axios
+pip install -r requirements.txt
 ```
 
 ---
 
-### 3️⃣ Create Environment Variables
+### 2️⃣ Configure Environment Variables
 
-Create a `.env` file in the backend folder.
+Create or open the `.env` file inside the `backend/` folder and paste your keys:
 
-```
-MONGO_URI=mongodb://localhost:27017/resumeai
-JWT_SECRET=your_secret_key
-OPENROUTER_API_KEY=your_openrouter_api_key
+```env
+# OpenRouter Key (Default)
+OPENROUTER_API_KEY=your_openrouter_key_here
+
+# Standard Gemini API Key (Fallback if OpenRouter fails or has no quota)
+GEMINI_API_KEY=your_gemini_key_here
 ```
 
 ---
 
-### 4️⃣ Start Backend Server
+### 3️⃣ Start the Backend Server
 
-```
-node server.js
+Run the FastAPI backend with uvicorn:
+
+```bash
+uvicorn app.main:app --reload
 ```
 
-Backend will run on:
-
+The backend server will run on:
 ```
-http://localhost:5000
+http://localhost:8000
 ```
 
 ---
 
 # ⚙️ Frontend Installation
 
-### 1️⃣ Navigate to frontend
+### 1️⃣ Install dependencies (at the root of the project)
 
-```
-cd frontend
-```
-
----
-
-### 2️⃣ Install dependencies
-
-```
+```bash
 npm install
 ```
 
-### Required Frontend Packages
-
-```
-react
-react-dom
-react-router-dom
-axios
-tailwindcss
-postcss
-vite
-```
-
 ---
 
-### 3️⃣ Start Frontend Server
+### 2️⃣ Start Frontend Server
 
-```
+```bash
 npm run dev
 ```
 
@@ -378,26 +237,22 @@ Results Returned to Dashboard
 
 # 🚀 Running the Full Application
 
-Open **two terminals**
+Open **two terminals**:
 
 ### Terminal 1 — Backend
-
-```
+```bash
 cd backend
-npm install
-node server.js
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
-### Terminal 2 — Frontend
-
-```
-cd frontend
+### Terminal 2 — Frontend (at root of the project)
+```bash
 npm install
 npm run dev
 ```
 
-Now open:
-
+Now open the React client in your browser:
 ```
 http://localhost:5173
 ```
